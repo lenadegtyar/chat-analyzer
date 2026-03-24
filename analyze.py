@@ -1,7 +1,8 @@
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup  # Bug 1: нужно установить: pip install beautifulsoup4
 import re
 from datetime import datetime, timedelta
 from collections import defaultdict
+from pathlib import Path
 
 CHAT_FILE = "messages.html"
 YOUR_NAME = "Введи своё имя"  # <- поменяй на своё имя как оно написано в чате
@@ -20,11 +21,15 @@ DAYS_RU = {
 
 
 def load_messages(filename):
+    path = Path(filename)
+    if not path.exists():
+        raise FileNotFoundError(f"Файл чата не найден: {filename}")
+
     with open(filename, encoding="utf-8") as f:
         soup = BeautifulSoup(f, "html.parser")
 
     messages = []
-    for block in soup.find_all("div", class_="message default"):
+    for block in soup.select("div.message.default"):
         name_tag = block.find("div", class_="from_name")
         date_tag = block.find("div", class_="date")
         text_tag = block.find("div", class_="text")
@@ -52,12 +57,14 @@ def calculate_streak(dates):
         return 0
     unique_days = sorted(set(d.date() for d in dates))
     streak = 1
+    max_streak = 1
     for i in range(1, len(unique_days)):
         if unique_days[i] - unique_days[i - 1] == timedelta(days=1):
             streak += 1
+            max_streak = max(max_streak, streak)
         else:
             streak = 1
-    return streak
+    return max_streak
 
 
 def analyze(messages, name):
@@ -106,5 +113,9 @@ def analyze(messages, name):
 
 
 if __name__ == "__main__":
-    messages = load_messages(CHAT_FILE)
-    analyze(messages, YOUR_NAME)
+    try:
+        messages = load_messages(CHAT_FILE)
+    except FileNotFoundError as exc:
+        print(exc)
+    else:
+        analyze(messages, YOUR_NAME)
