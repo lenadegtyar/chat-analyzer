@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-CHAT_FILE = "chat.txt"
+CHAT_FILE = "chat.html"  # Bug 1: неправильное имя файла
 YOUR_NAME = "Введи своё имя"  # <- поменяй на своё имя как оно написано в чате
 
 PROGRESS_WORDS = ["сделал", "сделала", "запустил", "запустила", "работает", "починил", "починила", "готово", "получилось"]
@@ -12,14 +12,34 @@ def load_messages(filename):
     messages = []
     # Bug 1: открываем файл без указания кодировки
     with open(filename) as f:
-        for line in f:
-            line = line.strip()
-            match = re.match(r'\[(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})\] (.+?): (.+)', line)
-            if match:
-                date_str, name, text = match.groups()
-                dt = datetime.strptime(date_str, "%d.%m.%Y %H:%M")
-                messages.append({"date": dt, "name": name, "text": text})
+        html = f.read()
+
+    # Находим все блоки сообщений
+    blocks = re.findall(
+        r'class="from_name">\s*(.+?)\s*</div>.*?'
+        r'title="(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2})[^"]*".*?'
+        r'class="text">\s*(.*?)\s*</div>',
+        html, re.DOTALL
+    )
+
+    for name, date_str, text in blocks:
+        dt = datetime.strptime(date_str, "%d.%m.%Y %H:%M:%S")
+        # Убираем HTML-теги из текста
+        clean_text = re.sub(r'<[^>]+>', ' ', text).strip()
+        messages.append({"date": dt, "name": name.strip(), "text": clean_text})
+
     return messages
+
+
+DAYS_RU = {
+    "Monday": "Понедельник",
+    "Tuesday": "Вторник",
+    "Wednesday": "Среда",
+    "Thursday": "Четверг",
+    "Friday": "Пятница",
+    "Saturday": "Суббота",
+    "Sunday": "Воскресенье",
+}
 
 
 def calculate_streak(dates):
@@ -28,8 +48,7 @@ def calculate_streak(dates):
     unique_days = sorted(set(d.date() for d in dates))
     streak = 1
     for i in range(1, len(unique_days)):
-        # Bug 2: неправильное условие — сравниваем с timedelta(days=2) вместо days=1
-        if unique_days[i] - unique_days[i - 1] == timedelta(days=2):
+        if unique_days[i] - unique_days[i - 1] == timedelta(days=1):
             streak += 1
         else:
             streak = 1
@@ -47,7 +66,8 @@ def analyze(messages, name):
     dates = [m["date"] for m in my_messages]
     days = defaultdict(int)
     for d in dates:
-        days[d.strftime("%A")] = days[d.strftime("%A")] + 1
+        # Bug 2: используем английское название дня вместо русского
+        days[d.strftime("%A")] += 1
 
     busiest_day = max(days, key=days.get)
     progress_count = sum(1 for m in my_messages if any(w in m["text"].lower() for w in PROGRESS_WORDS))
@@ -64,7 +84,7 @@ def analyze(messages, name):
     print(f"  Streak (дней подряд):     {streak} 🔥")
     print("─" * 40)
 
-    with open("my_progress.md", "w") as out:
+    with open("my_progress.md", "w", encoding="utf-8") as out:
         out.write(f"# Мой прогресс в интенсиве\n\n")
         out.write(f"**Участник:** {name}\n\n")
         out.write(f"| Метрика | Значение |\n")
