@@ -1,35 +1,12 @@
+from bs4 import BeautifulSoup
 import re
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-CHAT_FILE = "chat.html"  # Bug 1: неправильное имя файла
+CHAT_FILE = "messages.html"
 YOUR_NAME = "Введи своё имя"  # <- поменяй на своё имя как оно написано в чате
 
 PROGRESS_WORDS = ["сделал", "сделала", "запустил", "запустила", "работает", "починил", "починила", "готово", "получилось"]
-
-
-def load_messages(filename):
-    messages = []
-    # Bug 1: открываем файл без указания кодировки
-    with open(filename) as f:
-        html = f.read()
-
-    # Находим все блоки сообщений
-    blocks = re.findall(
-        r'class="from_name">\s*(.+?)\s*</div>.*?'
-        r'title="(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2})[^"]*".*?'
-        r'class="text">\s*(.*?)\s*</div>',
-        html, re.DOTALL
-    )
-
-    for name, date_str, text in blocks:
-        dt = datetime.strptime(date_str, "%d.%m.%Y %H:%M:%S")
-        # Убираем HTML-теги из текста
-        clean_text = re.sub(r'<[^>]+>', ' ', text).strip()
-        messages.append({"date": dt, "name": name.strip(), "text": clean_text})
-
-    return messages
-
 
 DAYS_RU = {
     "Monday": "Понедельник",
@@ -40,6 +17,34 @@ DAYS_RU = {
     "Saturday": "Суббота",
     "Sunday": "Воскресенье",
 }
+
+
+def load_messages(filename):
+    with open(filename, encoding="utf-8") as f:
+        soup = BeautifulSoup(f, "html.parser")
+
+    messages = []
+    for block in soup.find_all("div", class_="message default"):
+        name_tag = block.find("div", class_="from_name")
+        date_tag = block.find("div", class_="date")
+        text_tag = block.find("div", class_="text")
+
+        if not name_tag or not date_tag or not text_tag:
+            continue
+
+        date_str = date_tag.get("title", "")
+        match = re.match(r"(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2})", date_str)
+        if not match:
+            continue
+
+        dt = datetime.strptime(match.group(1), "%d.%m.%Y %H:%M:%S")
+        messages.append({
+            "date": dt,
+            "name": name_tag.get_text(strip=True),
+            "text": text_tag.get_text(" ", strip=True),
+        })
+
+    return messages
 
 
 def calculate_streak(dates):
@@ -64,12 +69,14 @@ def analyze(messages, name):
 
     total = len(my_messages)
     dates = [m["date"] for m in my_messages]
-    days = defaultdict(int)
-    for d in dates:
-        # Bug 2: используем английское название дня вместо русского
-        days[d.strftime("%A")] += 1
 
+    day_counts = defaultdict(int)
+    for d in dates:
+        day_counts[DAYS_RU[d.strftime("%A")]] += 1
+
+    # Bug 2: переменная называется day_counts, но здесь написано days
     busiest_day = max(days, key=days.get)
+
     progress_count = sum(1 for m in my_messages if any(w in m["text"].lower() for w in PROGRESS_WORDS))
     questions = sum(1 for m in my_messages if "?" in m["text"])
     streak = calculate_streak(dates)
@@ -85,10 +92,10 @@ def analyze(messages, name):
     print("─" * 40)
 
     with open("my_progress.md", "w", encoding="utf-8") as out:
-        out.write(f"# Мой прогресс в интенсиве\n\n")
+        out.write("# Мой прогресс в интенсиве\n\n")
         out.write(f"**Участник:** {name}\n\n")
-        out.write(f"| Метрика | Значение |\n")
-        out.write(f"|---|---|\n")
+        out.write("| Метрика | Значение |\n")
+        out.write("|---|---|\n")
         out.write(f"| Сообщений | {total} |\n")
         out.write(f"| Активный день | {busiest_day} |\n")
         out.write(f"| Прогресс-маркеры | {progress_count} |\n")
